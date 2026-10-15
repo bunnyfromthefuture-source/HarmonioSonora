@@ -35,5 +35,21 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
+    // Length of the crossfading grain window in milliseconds.
+    // Longer = smoother on low notes but more "echo"; shorter = tighter but more warble.
+    static constexpr float windowMs = 40.0f;
+
+    juce::AudioBuffer<float> delayBuffer;
+    int writePos = 0;
+    float phase = 0.0f;
+    float windowSamples = 1764.0f;
+    double currentSampleRate = 44100.0;
+
+    juce::SmoothedValue<float> mixSmooth, dryGainSmooth, bypassSmooth;
+
+    std::atomic<float>* intervalParam = nullptr;
+    std::atomic<float>* muteParam = nullptr;
+    std::atomic<float>* mixParam = nullptr;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonioProcessor)
 };
