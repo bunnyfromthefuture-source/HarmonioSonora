@@ -19,7 +19,8 @@ HarmonioProcessor::HarmonioProcessor()
     intervalParam = apvts.getRawParameterValue ("interval");
     muteParam     = apvts.getRawParameterValue ("muteOriginal");
     mixParam      = apvts.getRawParameterValue ("mix");
-    formantsParam = apvts.getRawParameterValue ("formants");
+    formantModeParam = apvts.getRawParameterValue ("formantMode");
+    tonalityParam    = apvts.getRawParameterValue ("tonality");
     formantBaseParam = apvts.getRawParameterValue ("formantBase");
 }
 
@@ -47,11 +48,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout HarmonioProcessor::createLay
 
     // Keeps the "character" of voices/instruments (their body resonance) in place
     // instead of shifting it along with the pitch.
-    layout.add (std::make_unique<juce::AudioParameterBool> (
-        juce::ParameterID { "formants", 1 }, "Preserve Formants", false));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "formantMode", 1 }, "Preserve Formants",
+        juce::StringArray { "Off", "Up-shifts only", "Always" }, 1));
 
     // Rough pitch of the source (e.g. ~200 Hz for a voice, ~100 Hz for a bass).
     // 0 = Auto (the plugin guesses, which can be unreliable).
+    // Tonality limit: above this frequency the shift is applied as a plain offset
+    // instead of a multiplication, which keeps more of the original brightness
+    // (mainly useful when pitching down). 0 = Off.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "tonality", 1 }, "Tonality Limit",
+        juce::NormalisableRange<float> (0.0f, 16000.0f, 10.0f, 0.4f), 0.0f,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction ([] (float v, int)
+            {
+                return v < 1.0f ? juce::String ("Off")
+                                : juce::String (juce::roundToInt (v)) + " Hz";
+            })));
+
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "formantBase", 1 }, "Formant Base",
         juce::NormalisableRange<float> (0.0f, 1000.0f, 1.0f, 0.4f), 0.0f,
@@ -73,8 +88,8 @@ void HarmonioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     stretch.presetDefault (channelsConfigured, (float) sampleRate);
     stretch.reset();
 
-    lastFormants = formantsParam->load() > 0.5f;
-    stretch.setFormantFactor (1.0f, lastFormants);
+    lastFormants = false;
+    stretch.setFormantFactor (1.0f, false);
 
     currentSampleRate = sampleRate;
     lastFormantBase = formantBaseParam->load();
@@ -130,9 +145,12 @@ void HarmonioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // Parameters
     const int idx = juce::jlimit (0, 6, juce::roundToInt (intervalParam->load()));
     const bool isUnison = (idx == 3);
-    const bool formants = formantsParam->load() > 0.5f;
+    const int formantMode = juce::roundToInt (formantModeParam->load()); // 0 Off, 1 Up-shifts only, 2 Always
+    const bool formants = (formantMode == 2) || (formantMode == 1 && idx > 3);
 
-    stretch.setTransposeFactor (pitchRatios[idx]);
+    const float tonalityHz = tonalityParam->load();
+    stretch.setTransposeFactor (pitchRatios[idx],
+                                tonalityHz > 1.0f ? tonalityHz / (float) currentSampleRate : 0.0f);
 
     if (formants != lastFormants)
     {

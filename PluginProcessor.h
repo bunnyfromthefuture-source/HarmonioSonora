@@ -54,7 +54,8 @@ private:
     std::atomic<float>* intervalParam = nullptr;
     std::atomic<float>* muteParam = nullptr;
     std::atomic<float>* mixParam = nullptr;
-    std::atomic<float>* formantsParam = nullptr;
+    std::atomic<float>* formantModeParam = nullptr;
+    std::atomic<float>* tonalityParam = nullptr;
     std::atomic<float>* formantBaseParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonioProcessor)
