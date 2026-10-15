@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(HarmonioSonora VERSION 0.3.0)
+project(HarmonioSonora VERSION 0.4.0)
 
 include(FetchContent)
 
@@ -38,10 +38,14 @@ juce_add_plugin(HarmonioSonora
     NEEDS_MIDI_OUTPUT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
-# The wood and chrome images are embedded inside the plugin.
+# The interface graphics are embedded inside the plugin.
 juce_add_binary_data(HarmonioAssets SOURCES
-    wood.jpg
-    chrome.jpg)
+    base.png
+    knobs_small.png
+    knobs_big.png
+    buttons.png
+    dialer.png
+    slider.png)
 
 target_sources(HarmonioSonora PRIVATE
     PluginProcessor.cpp

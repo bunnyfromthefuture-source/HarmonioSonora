@@ -4,28 +4,41 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
-// Draws the chrome knobs and the chrome toggle switches.
-class HarmonioLookAndFeel : public juce::LookAndFeel_V4
+// A rotary knob drawn from a "filmstrip" image (128 frames stacked vertically).
+class FilmstripKnob : public juce::Slider
 {
 public:
-    HarmonioLookAndFeel() = default;
+    // centre and size are given in the editor's coordinates (pixels)
+    FilmstripKnob (const juce::Image& strip, juce::Point<float> centre, float size);
+    void paint (juce::Graphics&) override;
 
-    void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
-                           float sliderPosProportional, float rotaryStartAngle,
-                           float rotaryEndAngle, juce::Slider&) override;
-
-    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
-                           bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
-
-    juce::Font getLabelFont (juce::Label&) override;
+private:
+    juce::Image filmstrip;
+    int numFrames = 1;
+    juce::Point<float> frameCentre;
+    float frameSize = 0.0f;
 };
 
 //==============================================================================
-// The big 7-position pitch slider on the chrome plate.
+// An on/off button drawn from a 2-frame image (off on top, lit on the bottom).
+class FilmstripToggle : public juce::ToggleButton
+{
+public:
+    FilmstripToggle (const juce::Image& strip, juce::Point<float> centre, float size);
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+
+private:
+    juce::Image filmstrip;
+    juce::Point<float> frameCentre;
+    float frameSize = 0.0f;
+};
+
+//==============================================================================
+// The pitch slider: a small handle that snaps onto the 7 tick marks.
 class PitchSlider : public juce::Component
 {
 public:
-    PitchSlider (juce::RangedAudioParameter& parameter, const juce::Image& chromeTexture);
+    PitchSlider (juce::RangedAudioParameter& parameter, const juce::Image& handleImage);
 
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -35,22 +48,20 @@ public:
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
 private:
-    juce::Rectangle<float> getPlate() const;
-    float xForIndex (int i) const;
-    int indexFromX (float x) const;
+    int indexFromEditorX (float editorX) const;
     void applyFromMouse (const juce::MouseEvent&);
 
-    juce::Image chromeImage;
+    juce::Image handle;
     int index = 3;
     juce::ParameterAttachment attachment;
 };
 
 //==============================================================================
-// A rotary control that clicks into 4 fixed positions (the analysis window).
-class DetentKnob : public juce::Component
+// The analysis-window dial: clicks into 4 fixed positions.
+class DialerKnob : public juce::Component
 {
 public:
-    explicit DetentKnob (juce::RangedAudioParameter& parameter);
+    DialerKnob (juce::RangedAudioParameter& parameter, const juce::Image& strip);
 
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -61,6 +72,7 @@ public:
 private:
     void applyFromMouse (const juce::MouseEvent&);
 
+    juce::Image filmstrip;
     int index = 1;
     juce::ParameterAttachment attachment;
 };
@@ -80,14 +92,14 @@ private:
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
     HarmonioProcessor& proc;
-    HarmonioLookAndFeel laf;
 
-    juce::Image woodImage, chromeImage;
+    juce::Image baseImage, smallKnobsImage, bigKnobsImage, buttonsImage, dialerImage, sliderImage;
 
     PitchSlider pitchSlider;
-    DetentKnob windowKnob;
-    juce::Slider formantBaseSlider, tonalitySlider, mixSlider;
-    juce::ToggleButton muteButton, formantsButton;
+    DialerKnob windowDial;
+    FilmstripKnob formantBaseKnob, tonalityKnob, mixKnob;
+    FilmstripToggle muteButton, formantsButton;
+    juce::Label formantBaseLabel, tonalityLabel, mixLabel;
 
     std::unique_ptr<SliderAttachment> formantBaseAttach, tonalityAttach, mixAttach;
     std::unique_ptr<ButtonAttachment> muteAttach, formantsAttach;

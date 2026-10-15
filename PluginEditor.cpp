@@ -3,190 +3,110 @@
 #include <cmath>
 
 //==============================================================================
-namespace ui
+// Layout: all positions are in pixels of the 395 x 539 background image.
+namespace layout
 {
-    const juce::Colour cream    { 0xffeadcb8 };
-    const juce::Colour lcdGreen { 0xffb9f27c };
-    const juce::Colour lcdDim   { 0xff5f6d4c };
-    const juce::Colour lcdBg    { 0xff101309 };
-    const juce::Colour ink      { 0xff26272a };
+    constexpr int   editorW = 395;
+    constexpr int   editorH = 539;
 
-    juce::Font makeFont (float size, int style = juce::Font::plain)
+    // Pitch slider: x of the 7 tick marks, and the handle's vertical centre / size
+    constexpr float tickX[7]   = { 120.5f, 146.0f, 171.5f, 196.5f, 222.0f, 247.5f, 273.0f };
+    constexpr float handleY    = 104.0f;
+    constexpr float handleW    = 13.2f;
+    constexpr float handleH    = 20.13f;
+
+    // Toggle buttons (centre) and size
+    const juce::Point<float> preserveCentre { 89.0f, 204.5f };
+    const juce::Point<float> muteCentre     { 305.0f, 458.5f };
+    constexpr float buttonSize = 34.8f;
+
+    // Knobs (frame centre) and sizes
+    const juce::Point<float> formantBaseCentre { 188.0f, 210.4f };
+    const juce::Point<float> tonalityCentre    { 297.0f, 210.4f };
+    const juce::Point<float> mixCentre         { 305.0f, 351.0f };
+    constexpr float smallKnobSize = 85.8f;
+    constexpr float bigKnobSize   = 116.6f;
+
+    // Black value boxes in the background image
+    const juce::Rectangle<int> formantBaseBox { 161, 248, 55, 15 };
+    const juce::Rectangle<int> tonalityBox    { 270, 248, 55, 15 };
+    const juce::Rectangle<int> mixBox         { 277, 393, 55, 15 };
+
+    // Dialer: pivot of the disc, and size of one frame
+    const juce::Point<float> dialCentre { 140.5f, 412.5f };
+    constexpr float dialFrameW = 114.24f;
+    constexpr float dialFrameH = 81.6f;
+
+    // Direction in which the lever points for each setting (degrees from 12 o'clock, clockwise)
+    constexpr float dialAngles[4] = { -100.0f, -59.0f, 52.0f, 100.0f };
+}
+
+namespace
+{
+    const juce::Colour lcdGreen { 0xff8dff72 };
+
+    // Draws one frame of a vertical filmstrip into the destination rectangle.
+    void drawFrame (juce::Graphics& g, const juce::Image& strip, int frame,
+                    int frameW, int frameH, juce::Rectangle<float> dest)
     {
-        return juce::Font (juce::FontOptions (size, style));
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+
+        auto sub = strip.getClippedImage (juce::Rectangle<int> (0, frame * frameH, frameW, frameH));
+        g.drawImageTransformed (sub,
+                                juce::AffineTransform::scale (dest.getWidth() / (float) frameW,
+                                                              dest.getHeight() / (float) frameH)
+                                    .translated (dest.getX(), dest.getY()));
     }
 
-    juce::Font makeMono (float size)
+    juce::Rectangle<float> frameRect (juce::Point<float> editorCentre, float w, float h,
+                                      juce::Point<int> componentPosition)
     {
-        return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), size, juce::Font::bold));
-    }
-
-    juce::ColourGradient chromeVertical (juce::Rectangle<float> r)
-    {
-        juce::ColourGradient grad (juce::Colour (0xfff6f7f9), 0.0f, r.getY(),
-                                   juce::Colour (0xff595d63), 0.0f, r.getBottom(), false);
-        grad.addColour (0.45, juce::Colour (0xffb4b8be));
-        grad.addColour (0.55, juce::Colour (0xff8d9198));
-        return grad;
-    }
-
-    // Text with a small dark "engraved" shadow, for use on the wood.
-    void drawEngraved (juce::Graphics& g, const juce::String& text, juce::Rectangle<int> area,
-                       float size, juce::Justification just = juce::Justification::centredTop)
-    {
-        g.setFont (makeFont (size, juce::Font::bold));
-        g.setColour (juce::Colours::black.withAlpha (0.65f));
-        g.drawFittedText (text, area.translated (1, 1), just, 2);
-        g.setColour (cream);
-        g.drawFittedText (text, area, just, 2);
-    }
-
-    // A chrome knob with a knurled rim and a dark pointer. pointerAngle: 0 = 12 o'clock, clockwise.
-    void drawChromeKnob (juce::Graphics& g, juce::Point<float> c, float r, float pointerAngle)
-    {
-        // Shadow
-        {
-            juce::Path p;
-            p.addEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
-            juce::DropShadow (juce::Colours::black.withAlpha (0.7f), (int) (r * 0.35f),
-                              juce::Point<int> (0, (int) (r * 0.12f))).drawForPath (g, p);
-        }
-
-        // Rim
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff4f5f7), c.x - r * 0.7f, c.y - r * 0.7f,
-                                                 juce::Colour (0xff5d6066), c.x + r * 0.7f, c.y + r * 0.7f, false));
-        g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
-
-        // Knurling
-        g.setColour (juce::Colours::black.withAlpha (0.28f));
-        const int teeth = 64;
-        for (int i = 0; i < teeth; ++i)
-        {
-            const float a = juce::MathConstants<float>::twoPi * (float) i / (float) teeth;
-            const float s = std::sin (a), co = std::cos (a);
-            g.drawLine (c.x + s * r * 0.90f, c.y - co * r * 0.90f,
-                        c.x + s * r * 0.995f, c.y - co * r * 0.995f, 1.0f);
-        }
-
-        // Bevel groove
-        const float r2 = r * 0.86f;
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3e4146), c.x - r2 * 0.7f, c.y - r2 * 0.7f,
-                                                 juce::Colour (0xffdadde1), c.x + r2 * 0.7f, c.y + r2 * 0.7f, false));
-        g.fillEllipse (c.x - r2, c.y - r2, r2 * 2.0f, r2 * 2.0f);
-
-        // Face
-        const float r3 = r * 0.80f;
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xfffbfbfc), c.x - r3 * 0.35f, c.y - r3 * 0.45f,
-                                                 juce::Colour (0xff81858b), c.x + r3 * 0.85f, c.y + r3 * 0.9f, true));
-        g.fillEllipse (c.x - r3, c.y - r3, r3 * 2.0f, r3 * 2.0f);
-
-        // Faint brushed rings
-        for (int i = 1; i <= 9; ++i)
-        {
-            const float rr = r3 * (float) i / 10.0f;
-            g.setColour ((i % 2 == 0 ? juce::Colours::white : juce::Colours::black).withAlpha (0.05f));
-            g.drawEllipse (c.x - rr, c.y - rr, rr * 2.0f, rr * 2.0f, 1.0f);
-        }
-
-        // Pointer
-        const float s = std::sin (pointerAngle), co = std::cos (pointerAngle);
-        juce::Path pointer;
-        pointer.startNewSubPath (c.x + s * r3 * 0.30f, c.y - co * r3 * 0.30f);
-        pointer.lineTo (c.x + s * r3 * 0.92f, c.y - co * r3 * 0.92f);
-
-        g.setColour (juce::Colours::white.withAlpha (0.55f));
-        g.strokePath (pointer, juce::PathStrokeType (r * 0.11f + 1.5f, juce::PathStrokeType::curved,
-                                                     juce::PathStrokeType::rounded));
-        g.setColour (juce::Colour (0xff17181a));
-        g.strokePath (pointer, juce::PathStrokeType (r * 0.10f, juce::PathStrokeType::curved,
-                                                     juce::PathStrokeType::rounded));
+        return juce::Rectangle<float> (w, h).withCentre (editorCentre - componentPosition.toFloat());
     }
 }
 
 //==============================================================================
-// Look and feel
+// Filmstrip knob
 
-juce::Font HarmonioLookAndFeel::getLabelFont (juce::Label&)
+FilmstripKnob::FilmstripKnob (const juce::Image& strip, juce::Point<float> centre, float size)
+    : filmstrip (strip), frameCentre (centre), frameSize (size)
 {
-    return ui::makeMono (15.0f);
+    numFrames = juce::jmax (1, strip.getHeight() / juce::jmax (1, strip.getWidth()));
+
+    setSliderStyle (juce::Slider::RotaryVerticalDrag);
+    setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    setMouseDragSensitivity (250);
 }
 
-void HarmonioLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
-                                            float sliderPos, float startAngle, float endAngle, juce::Slider&)
+void FilmstripKnob::paint (juce::Graphics& g)
 {
-    const auto centre = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height).getCentre();
-    const float r = juce::jmin ((float) width, (float) height) * 0.5f - 14.0f;
+    const double proportion = valueToProportionOfLength (getValue());
+    const int frame = juce::jlimit (0, numFrames - 1, juce::roundToInt (proportion * (numFrames - 1)));
 
-    if (r < 8.0f)
-        return;
-
-    // Scale ticks around the knob
-    const int numTicks = 11;
-    for (int i = 0; i < numTicks; ++i)
-    {
-        const float a = startAngle + (endAngle - startAngle) * (float) i / (float) (numTicks - 1);
-        const float len = (i % 5 == 0) ? 8.0f : 5.0f;
-        const float s = std::sin (a), c = std::cos (a);
-
-        g.setColour (ui::cream.withAlpha (0.8f));
-        g.drawLine (centre.x + s * (r + 4.0f), centre.y - c * (r + 4.0f),
-                    centre.x + s * (r + 4.0f + len), centre.y - c * (r + 4.0f + len), 1.4f);
-    }
-
-    ui::drawChromeKnob (g, centre, r, startAngle + sliderPos * (endAngle - startAngle));
+    drawFrame (g, filmstrip, frame, filmstrip.getWidth(), filmstrip.getWidth(),
+               frameRect (frameCentre, frameSize, frameSize, getPosition()));
 }
 
-void HarmonioLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, bool, bool)
+//==============================================================================
+// Filmstrip toggle
+
+FilmstripToggle::FilmstripToggle (const juce::Image& strip, juce::Point<float> centre, float size)
+    : filmstrip (strip), frameCentre (centre), frameSize (size)
 {
-    auto r = button.getLocalBounds().toFloat().reduced (2.0f);
-    const float corner = r.getHeight() * 0.28f;
+    setClickingTogglesState (true);
+}
 
-    // Shadow
-    {
-        juce::Path p;
-        p.addRoundedRectangle (r, corner);
-        juce::DropShadow (juce::Colours::black.withAlpha (0.6f), 6, juce::Point<int> (0, 2)).drawForPath (g, p);
-    }
-
-    // Chrome frame
-    g.setGradientFill (ui::chromeVertical (r));
-    g.fillRoundedRectangle (r, corner);
-
-    // Dark slot
-    auto slot = r.reduced (4.0f);
-    g.setColour (juce::Colour (0xff0b0c0d));
-    g.fillRoundedRectangle (slot, corner * 0.7f);
-
-    // Lever
-    const bool on = button.getToggleState();
-    const float lw = slot.getWidth() * 0.46f;
-    juce::Rectangle<float> lever (on ? slot.getRight() - lw : slot.getX(), slot.getY(), lw, slot.getHeight());
-    lever = lever.reduced (1.0f);
-
-    g.setGradientFill (ui::chromeVertical (lever));
-    g.fillRoundedRectangle (lever, corner * 0.6f);
-    g.setColour (juce::Colour (0xff2b2d30));
-    g.drawRoundedRectangle (lever, corner * 0.6f, 1.0f);
-
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
-    for (int i = -1; i <= 1; ++i)
-    {
-        const float lx = lever.getCentreX() + (float) i * 4.0f;
-        g.drawLine (lx, lever.getY() + 4.0f, lx, lever.getBottom() - 4.0f, 1.0f);
-    }
-
-    // ON / OFF text on the free side of the slot
-    auto textArea = on ? slot.withWidth (slot.getWidth() - lw) : slot.withTrimmedLeft (lw);
-    g.setColour (on ? ui::lcdGreen : ui::cream.withAlpha (0.55f));
-    g.setFont (ui::makeFont (11.0f, juce::Font::bold));
-    g.drawText (on ? "ON" : "OFF", textArea, juce::Justification::centred, false);
+void FilmstripToggle::paintButton (juce::Graphics& g, bool, bool)
+{
+    drawFrame (g, filmstrip, getToggleState() ? 1 : 0, filmstrip.getWidth(), filmstrip.getWidth(),
+               frameRect (frameCentre, frameSize, frameSize, getPosition()));
 }
 
 //==============================================================================
 // Pitch slider
 
-PitchSlider::PitchSlider (juce::RangedAudioParameter& parameter, const juce::Image& chromeTexture)
-    : chromeImage (chromeTexture),
+PitchSlider::PitchSlider (juce::RangedAudioParameter& parameter, const juce::Image& handleImage)
+    : handle (handleImage),
       attachment (parameter, [this] (float v)
                   {
                       index = juce::jlimit (0, 6, juce::roundToInt (v));
@@ -196,29 +116,19 @@ PitchSlider::PitchSlider (juce::RangedAudioParameter& parameter, const juce::Ima
     attachment.sendInitialUpdate();
 }
 
-juce::Rectangle<float> PitchSlider::getPlate() const
+int PitchSlider::indexFromEditorX (float editorX) const
 {
-    return getLocalBounds().toFloat().reduced (12.0f);
-}
-
-float PitchSlider::xForIndex (int i) const
-{
-    const auto plate = getPlate();
-    const float x0 = plate.getX() + 70.0f;
-    const float step = (plate.getWidth() - 140.0f) / 6.0f;
-    return x0 + step * (float) i;
-}
-
-int PitchSlider::indexFromX (float x) const
-{
-    const float x0 = xForIndex (0);
-    const float step = xForIndex (1) - x0;
-    return juce::jlimit (0, 6, juce::roundToInt ((x - x0) / step));
+    int best = 0;
+    for (int i = 1; i < 7; ++i)
+        if (std::abs (editorX - layout::tickX[i]) < std::abs (editorX - layout::tickX[best]))
+            best = i;
+    return best;
 }
 
 void PitchSlider::applyFromMouse (const juce::MouseEvent& e)
 {
-    const int i = indexFromX (e.position.x);
+    const int i = indexFromEditorX (e.position.x + (float) getX());
+
     if (i != index)
     {
         index = i;
@@ -265,137 +175,23 @@ void PitchSlider::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWhee
 
 void PitchSlider::paint (juce::Graphics& g)
 {
-    static const char* names[7]  = { "octave", "fifth", "fourth", "unison", "fourth", "fifth", "octave" };
-    static const char* ratios[7] = { "2:1", "3:2", "4:3", "1:1", "4:3", "3:2", "2:1" };
+    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
 
-    const auto plate = getPlate();
-    const float cornerSize = 14.0f;
+    const auto dest = frameRect ({ layout::tickX[index], layout::handleY },
+                                 layout::handleW, layout::handleH, getPosition());
 
-    // Chrome plate with shadow
-    {
-        juce::Path p;
-        p.addRoundedRectangle (plate, cornerSize);
-        juce::DropShadow (juce::Colours::black.withAlpha (0.65f), 12, juce::Point<int> (0, 4)).drawForPath (g, p);
-
-        juce::Graphics::ScopedSaveState save (g);
-        g.reduceClipRegion (p);
-        g.drawImage (chromeImage, plate, juce::RectanglePlacement::stretchToFit);
-    }
-
-    g.setColour (ui::ink.withAlpha (0.85f));
-    g.drawRoundedRectangle (plate, cornerSize, 2.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.65f));
-    g.drawRoundedRectangle (plate.reduced (2.5f), cornerSize - 2.0f, 1.0f);
-
-    const float trackY = plate.getY() + 84.0f;
-
-    // Track groove
-    {
-        juce::Rectangle<float> track (xForIndex (0) - 22.0f, trackY - 3.0f, xForIndex (6) - xForIndex (0) + 44.0f, 6.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.7f));
-        g.fillRoundedRectangle (track.translated (0.0f, 1.5f), 3.0f);
-        g.setColour (juce::Colour (0xff2a2c2f));
-        g.fillRoundedRectangle (track, 3.0f);
-    }
-
-    // The seven positions
-    for (int i = 0; i < 7; ++i)
-    {
-        const float cx = xForIndex (i);
-        const bool selected = (i == index);
-
-        // name above the display
-        g.setColour (ui::ink);
-        g.setFont (ui::makeFont (11.5f, juce::Font::bold));
-        g.drawText (names[i], juce::Rectangle<float> (cx - 40.0f, plate.getY() + 6.0f, 80.0f, 16.0f),
-                    juce::Justification::centred, false);
-
-        // ratio display
-        juce::Rectangle<float> box (cx - 26.0f, plate.getY() + 24.0f, 52.0f, 28.0f);
-        g.setColour (ui::lcdBg);
-        g.fillRoundedRectangle (box, 4.0f);
-
-        if (selected)
-        {
-            g.setColour (ui::lcdGreen.withAlpha (0.14f));
-            g.fillRoundedRectangle (box.reduced (2.0f), 3.0f);
-        }
-
-        g.setColour (juce::Colour (0xff4a4d51));
-        g.drawRoundedRectangle (box, 4.0f, 1.5f);
-
-        g.setColour (selected ? ui::lcdGreen : ui::lcdDim);
-        g.setFont (ui::makeMono (17.0f));
-        g.drawText (ratios[i], box, juce::Justification::centred, false);
-
-        // stem down to the track and a small notch
-        g.setColour (ui::ink.withAlpha (0.85f));
-        g.drawLine (cx, box.getBottom(), cx, trackY, 1.5f);
-        g.fillEllipse (cx - 3.0f, trackY - 3.0f, 6.0f, 6.0f);
-    }
-
-    // LOWER / HIGHER bars
-    {
-        const float barY = plate.getY() + 112.0f;
-        const float barH = 26.0f;
-        const float centreX = xForIndex (3);
-
-        juce::Rectangle<float> lower (xForIndex (0) - 30.0f, barY, (centreX - 7.0f) - (xForIndex (0) - 30.0f), barH);
-        juce::Rectangle<float> higher (centreX + 7.0f, barY, (xForIndex (6) + 30.0f) - (centreX + 7.0f), barH);
-
-        g.setColour (juce::Colour (0xff111213));
-        g.fillRoundedRectangle (lower, 3.0f);
-        g.setColour (juce::Colour (0xfff5f5f2));
-        g.fillRoundedRectangle (higher, 3.0f);
-        g.setColour (ui::ink);
-        g.drawRoundedRectangle (higher, 3.0f, 1.2f);
-
-        g.setFont (ui::makeFont (12.0f, juce::Font::bold));
-        g.setColour (juce::Colours::white);
-        g.drawText ("L  O  W  E  R", lower, juce::Justification::centred, false);
-        g.setColour (ui::ink);
-        g.drawText ("H  I  G  H  E  R", higher, juce::Justification::centred, false);
-    }
-
-    // The handle
-    {
-        const float hx = xForIndex (index);
-
-        juce::Path handle;
-        handle.startNewSubPath (hx - 14.0f, trackY - 30.0f);
-        handle.lineTo (hx + 14.0f, trackY - 30.0f);
-        handle.lineTo (hx + 14.0f, trackY - 8.0f);
-        handle.lineTo (hx, trackY + 7.0f);
-        handle.lineTo (hx - 14.0f, trackY - 8.0f);
-        handle.closeSubPath();
-        handle = handle.createPathWithRoundedCorners (3.0f);
-
-        juce::DropShadow (juce::Colours::black.withAlpha (0.6f), 7, juce::Point<int> (0, 3)).drawForPath (g, handle);
-
-        g.setGradientFill (ui::chromeVertical (handle.getBounds()));
-        g.fillPath (handle);
-        g.setColour (juce::Colour (0xff2b2d30));
-        g.strokePath (handle, juce::PathStrokeType (1.3f));
-
-        // red indicator line (as in the original sketch)
-        g.setColour (juce::Colour (0xffb3261e));
-        g.fillRoundedRectangle (hx - 2.0f, trackY - 26.0f, 4.0f, 18.0f, 1.5f);
-    }
+    g.drawImageTransformed (handle,
+                            juce::AffineTransform::scale (dest.getWidth() / (float) handle.getWidth(),
+                                                          dest.getHeight() / (float) handle.getHeight())
+                                .translated (dest.getX(), dest.getY()));
 }
 
 //==============================================================================
-// Detent knob (analysis window)
+// Dialer
 
-namespace
-{
-    constexpr float detentAngles[4] = { -105.0f, -35.0f, 35.0f, 105.0f };
-    const char* detentLabels[4] = { "50ms", "120ms", "250ms", "400ms" };
-    constexpr float knobCentreY = 68.0f;
-    constexpr float knobRadius = 28.0f;
-}
-
-DetentKnob::DetentKnob (juce::RangedAudioParameter& parameter)
-    : attachment (parameter, [this] (float v)
+DialerKnob::DialerKnob (juce::RangedAudioParameter& parameter, const juce::Image& strip)
+    : filmstrip (strip),
+      attachment (parameter, [this] (float v)
                   {
                       index = juce::jlimit (0, 3, juce::roundToInt (v));
                       repaint();
@@ -404,22 +200,22 @@ DetentKnob::DetentKnob (juce::RangedAudioParameter& parameter)
     attachment.sendInitialUpdate();
 }
 
-void DetentKnob::applyFromMouse (const juce::MouseEvent& e)
+void DialerKnob::applyFromMouse (const juce::MouseEvent& e)
 {
-    const float dx = e.position.x - (float) getWidth() * 0.5f;
-    const float dy = e.position.y - knobCentreY;
+    const float dx = e.position.x + (float) getX() - layout::dialCentre.x;
+    const float dy = e.position.y + (float) getY() - layout::dialCentre.y;
 
-    if (dx * dx + dy * dy < 100.0f)
-        return; // too close to the centre to tell
+    if (dx * dx + dy * dy < 64.0f)
+        return; // too close to the pivot to tell
 
     const float angle = juce::radiansToDegrees (std::atan2 (dx, -dy));
 
-    if (std::abs (angle) > 150.0f)
-        return; // pointing at the bottom: ignore
+    if (std::abs (angle) > 160.0f)
+        return; // pointing straight down: ignore
 
     int best = 0;
     for (int i = 1; i < 4; ++i)
-        if (std::abs (angle - detentAngles[i]) < std::abs (angle - detentAngles[best]))
+        if (std::abs (angle - layout::dialAngles[i]) < std::abs (angle - layout::dialAngles[best]))
             best = i;
 
     if (best != index)
@@ -430,23 +226,23 @@ void DetentKnob::applyFromMouse (const juce::MouseEvent& e)
     }
 }
 
-void DetentKnob::mouseDown (const juce::MouseEvent& e)
+void DialerKnob::mouseDown (const juce::MouseEvent& e)
 {
     attachment.beginGesture();
     applyFromMouse (e);
 }
 
-void DetentKnob::mouseDrag (const juce::MouseEvent& e)
+void DialerKnob::mouseDrag (const juce::MouseEvent& e)
 {
     applyFromMouse (e);
 }
 
-void DetentKnob::mouseUp (const juce::MouseEvent&)
+void DialerKnob::mouseUp (const juce::MouseEvent&)
 {
     attachment.endGesture();
 }
 
-void DetentKnob::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
+void DialerKnob::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
 {
     const int step = wheel.deltaY > 0.0f ? 1 : (wheel.deltaY < 0.0f ? -1 : 0);
     const int next = juce::jlimit (0, 3, index + step);
@@ -459,31 +255,10 @@ void DetentKnob::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheel
     }
 }
 
-void DetentKnob::paint (juce::Graphics& g)
+void DialerKnob::paint (juce::Graphics& g)
 {
-    const float cx = (float) getWidth() * 0.5f;
-    const float cy = knobCentreY;
-
-    for (int i = 0; i < 4; ++i)
-    {
-        const float a = juce::degreesToRadians (detentAngles[i]);
-        const float s = std::sin (a), c = std::cos (a);
-        const bool selected = (i == index);
-
-        // small marker dot on the wood
-        g.setColour (ui::cream.withAlpha (selected ? 0.95f : 0.6f));
-        g.fillEllipse (cx + s * 42.0f - 2.0f, cy - c * 42.0f - 2.0f, 4.0f, 4.0f);
-
-        // label
-        juce::Rectangle<int> labelArea ((int) (cx + s * 66.0f - 26.0f), (int) (cy - c * 62.0f - 8.0f), 52, 16);
-        g.setFont (ui::makeFont (12.5f, juce::Font::bold));
-        g.setColour (juce::Colours::black.withAlpha (0.6f));
-        g.drawText (detentLabels[i], labelArea.translated (1, 1), juce::Justification::centred, false);
-        g.setColour (selected ? ui::cream : ui::cream.withAlpha (0.55f));
-        g.drawText (detentLabels[i], labelArea, juce::Justification::centred, false);
-    }
-
-    ui::drawChromeKnob (g, { cx, cy }, knobRadius, juce::degreesToRadians (detentAngles[index]));
+    drawFrame (g, filmstrip, index, filmstrip.getWidth(), filmstrip.getHeight() / 4,
+               frameRect (layout::dialCentre, layout::dialFrameW, layout::dialFrameH, getPosition()));
 }
 
 //==============================================================================
@@ -492,105 +267,96 @@ void DetentKnob::paint (juce::Graphics& g)
 HarmonioEditor::HarmonioEditor (HarmonioProcessor& p)
     : AudioProcessorEditor (&p),
       proc (p),
-      woodImage (juce::ImageCache::getFromMemory (BinaryData::wood_jpg, BinaryData::wood_jpgSize)),
-      chromeImage (juce::ImageCache::getFromMemory (BinaryData::chrome_jpg, BinaryData::chrome_jpgSize)),
-      pitchSlider (*p.apvts.getParameter ("interval"), chromeImage),
-      windowKnob (*p.apvts.getParameter ("window"))
+      baseImage       (juce::ImageCache::getFromMemory (BinaryData::base_png,        BinaryData::base_pngSize)),
+      smallKnobsImage (juce::ImageCache::getFromMemory (BinaryData::knobs_small_png, BinaryData::knobs_small_pngSize)),
+      bigKnobsImage   (juce::ImageCache::getFromMemory (BinaryData::knobs_big_png,   BinaryData::knobs_big_pngSize)),
+      buttonsImage    (juce::ImageCache::getFromMemory (BinaryData::buttons_png,     BinaryData::buttons_pngSize)),
+      dialerImage     (juce::ImageCache::getFromMemory (BinaryData::dialer_png,      BinaryData::dialer_pngSize)),
+      sliderImage     (juce::ImageCache::getFromMemory (BinaryData::slider_png,      BinaryData::slider_pngSize)),
+      pitchSlider (*p.apvts.getParameter ("interval"), sliderImage),
+      windowDial (*p.apvts.getParameter ("window"), dialerImage),
+      formantBaseKnob (smallKnobsImage, layout::formantBaseCentre, layout::smallKnobSize),
+      tonalityKnob    (smallKnobsImage, layout::tonalityCentre,    layout::smallKnobSize),
+      mixKnob         (bigKnobsImage,   layout::mixCentre,         layout::bigKnobSize),
+      muteButton      (buttonsImage, layout::muteCentre,     layout::buttonSize),
+      formantsButton  (buttonsImage, layout::preserveCentre, layout::buttonSize)
 {
-    setLookAndFeel (&laf);
-    setSize (800, 560);
-
-    auto setupKnob = [this] (juce::Slider& s, int boxWidth, int boxHeight)
-    {
-        s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        s.setRotaryParameters (juce::MathConstants<float>::pi * 1.2f,
-                               juce::MathConstants<float>::pi * 2.8f, true);
-        s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, boxWidth, boxHeight);
-        s.setTextBoxIsEditable (true);
-        s.setMouseDragSensitivity (220);
-        s.setColour (juce::Slider::textBoxTextColourId, ui::lcdGreen);
-        s.setColour (juce::Slider::textBoxBackgroundColourId, ui::lcdBg);
-        s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0xff7b7e82));
-        s.setColour (juce::Slider::textBoxHighlightColourId, juce::Colour (0xff4f6b32));
-        addAndMakeVisible (s);
-    };
-
-    setupKnob (formantBaseSlider, 92, 24);
-    setupKnob (tonalitySlider, 92, 24);
-    setupKnob (mixSlider, 100, 26);
+    setSize (layout::editorW, layout::editorH);
 
     addAndMakeVisible (pitchSlider);
-    addAndMakeVisible (windowKnob);
+    addAndMakeVisible (windowDial);
+    addAndMakeVisible (formantBaseKnob);
+    addAndMakeVisible (tonalityKnob);
+    addAndMakeVisible (mixKnob);
     addAndMakeVisible (muteButton);
     addAndMakeVisible (formantsButton);
 
-    formantBaseAttach = std::make_unique<SliderAttachment> (proc.apvts, "formantBase", formantBaseSlider);
-    tonalityAttach    = std::make_unique<SliderAttachment> (proc.apvts, "tonality", tonalitySlider);
-    mixAttach         = std::make_unique<SliderAttachment> (proc.apvts, "mix", mixSlider);
+    // Connect to the plugin's parameters
+    formantBaseAttach = std::make_unique<SliderAttachment> (proc.apvts, "formantBase", formantBaseKnob);
+    tonalityAttach    = std::make_unique<SliderAttachment> (proc.apvts, "tonality", tonalityKnob);
+    mixAttach         = std::make_unique<SliderAttachment> (proc.apvts, "mix", mixKnob);
     muteAttach        = std::make_unique<ButtonAttachment> (proc.apvts, "muteOriginal", muteButton);
     formantsAttach    = std::make_unique<ButtonAttachment> (proc.apvts, "formants", formantsButton);
+
+    // The value boxes: show the knob's value, and let the user type one in
+    auto setupLabel = [this] (juce::Label& label, juce::Slider& knob)
+    {
+        label.setJustificationType (juce::Justification::centred);
+        label.setBorderSize (juce::BorderSize<int> (0, 2, 0, 2));
+        label.setFont (juce::Font (juce::FontOptions ("Consolas", 11.0f, juce::Font::bold)));
+        label.setEditable (true, true, false);
+
+        label.setColour (juce::Label::textColourId, lcdGreen);
+        label.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+        label.setColour (juce::Label::outlineColourId, juce::Colours::transparentBlack);
+        label.setColour (juce::Label::textWhenEditingColourId, lcdGreen);
+        label.setColour (juce::Label::backgroundWhenEditingColourId, juce::Colours::black);
+        label.setColour (juce::Label::outlineWhenEditingColourId, lcdGreen.withAlpha (0.6f));
+
+        knob.onValueChange = [&knob, &label]
+        {
+            label.setText (knob.getTextFromValue (knob.getValue()), juce::dontSendNotification);
+        };
+
+        label.onTextChange = [&knob, &label]
+        {
+            knob.setValue (knob.getValueFromText (label.getText()), juce::sendNotificationSync);
+            knob.onValueChange(); // shows the cleaned-up value, e.g. "200 Hz"
+        };
+
+        addAndMakeVisible (label);
+        knob.onValueChange();
+    };
+
+    setupLabel (formantBaseLabel, formantBaseKnob);
+    setupLabel (tonalityLabel, tonalityKnob);
+    setupLabel (mixLabel, mixKnob);
 }
 
-HarmonioEditor::~HarmonioEditor()
-{
-    setLookAndFeel (nullptr);
-}
+HarmonioEditor::~HarmonioEditor() = default;
 
 void HarmonioEditor::resized()
 {
-    pitchSlider.setBounds (44, 112, 712, 180);
+    // Pitch slider: covers the tick marks and their ratio labels (so you can click on those too)
+    pitchSlider.setBounds (100, 84, 195, 64);
 
-    muteButton.setBounds (64, 306, 76, 30);
-    formantsButton.setBounds (64, 420, 76, 30);
+    // Dialer: covers the dial and its four labels
+    windowDial.setBounds (35, 355, 210, 100);
 
-    formantBaseSlider.setBounds (175, 298, 100, 124);
-    tonalitySlider.setBounds (285, 298, 100, 124);
-    windowKnob.setBounds (402, 296, 176, 140);
-    mixSlider.setBounds (600, 292, 150, 196);
+    formantBaseKnob.setBounds (145, 167, 87, 87);
+    tonalityKnob.setBounds (254, 167, 87, 87);
+    mixKnob.setBounds (246, 292, 118, 118);
+
+    formantsButton.setBounds (71, 187, 36, 36);
+    muteButton.setBounds (287, 441, 36, 36);
+
+    formantBaseLabel.setBounds (layout::formantBaseBox);
+    tonalityLabel.setBounds (layout::tonalityBox);
+    mixLabel.setBounds (layout::mixBox);
 }
 
 void HarmonioEditor::paint (juce::Graphics& g)
 {
-    // Wood
-    g.drawImage (woodImage, getLocalBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
-
-    // Chrome frame
-    {
-        auto frame = getLocalBounds().toFloat().reduced (14.0f);
-
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.drawRoundedRectangle (frame.expanded (2.0f), 26.0f, 3.0f);
-
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff3f4f6), frame.getX(), frame.getY(),
-                                                 juce::Colour (0xff6a6e74), frame.getRight(), frame.getBottom(), false));
-        g.drawRoundedRectangle (frame, 24.0f, 3.5f);
-
-        g.setColour (juce::Colours::black.withAlpha (0.5f));
-        g.drawRoundedRectangle (frame.reduced (4.0f), 20.0f, 1.2f);
-    }
-
-    // Title: a script font if the system has one (Windows has "Segoe Script"), else the default font
-    {
-        const juce::Font titleFont (juce::FontOptions ("Segoe Script", 44.0f, juce::Font::plain));
-        const juce::Rectangle<int> titleArea (0, 24, getWidth(), 62);
-
-        g.setFont (titleFont);
-        g.setColour (juce::Colours::black.withAlpha (0.65f));
-        g.drawText ("Harmonio Sonora", titleArea.translated (2, 2), juce::Justification::centred, false);
-        g.setColour (ui::cream);
-        g.drawText ("Harmonio Sonora", titleArea, juce::Justification::centred, false);
-
-        g.setFont (ui::makeFont (10.5f, juce::Font::bold));
-        g.setColour (ui::cream.withAlpha (0.75f));
-        g.drawText ("P E R F E C T    C O N S O N A N C E S    S H I F T E R",
-                    juce::Rectangle<int> (0, 88, getWidth(), 16), juce::Justification::centred, false);
-    }
-
-    // Control labels
-    ui::drawEngraved (g, "MUTE ORIGINAL SIGNAL", { 50, 340, 104, 40 }, 12.5f);
-    ui::drawEngraved (g, "PRESERVE FORMANTS", { 50, 454, 104, 40 }, 12.5f);
-    ui::drawEngraved (g, "FORMANT BASE", { 170, 428, 110, 22 }, 12.5f);
-    ui::drawEngraved (g, "TONALITY LIMIT", { 280, 428, 110, 22 }, 12.5f);
-    ui::drawEngraved (g, "ANALYSIS WINDOW", { 402, 440, 176, 22 }, 12.5f);
-    ui::drawEngraved (g, "OUTPUT MIX", { 600, 490, 150, 28 }, 17.0f);
+    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+    g.drawImage (baseImage, getLocalBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
 }
