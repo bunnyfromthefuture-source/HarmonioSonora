@@ -1,0 +1,24 @@
+name: Build plugin
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Get the project files
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Save the finished plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: HarmonioSonora-VST3
+          path: build/HarmonioSonora_artefacts/Release/VST3/
