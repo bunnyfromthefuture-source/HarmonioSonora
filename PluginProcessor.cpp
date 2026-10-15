@@ -20,6 +20,7 @@ HarmonioProcessor::HarmonioProcessor()
     muteParam     = apvts.getRawParameterValue ("muteOriginal");
     mixParam      = apvts.getRawParameterValue ("mix");
     formantsParam = apvts.getRawParameterValue ("formants");
+    formantBaseParam = apvts.getRawParameterValue ("formantBase");
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout HarmonioProcessor::createLayout()
@@ -49,6 +50,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout HarmonioProcessor::createLay
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "formants", 1 }, "Preserve Formants", false));
 
+    // Rough pitch of the source (e.g. ~200 Hz for a voice, ~100 Hz for a bass).
+    // 0 = Auto (the plugin guesses, which can be unreliable).
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "formantBase", 1 }, "Formant Base",
+        juce::NormalisableRange<float> (0.0f, 1000.0f, 1.0f, 0.4f), 0.0f,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction ([] (float v, int)
+            {
+                return v < 1.0f ? juce::String ("Auto")
+                                : juce::String (juce::roundToInt (v)) + " Hz";
+            })));
+
     return layout;
 }
 
@@ -62,6 +75,10 @@ void HarmonioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     lastFormants = formantsParam->load() > 0.5f;
     stretch.setFormantFactor (1.0f, lastFormants);
+
+    currentSampleRate = sampleRate;
+    lastFormantBase = formantBaseParam->load();
+    stretch.setFormantBase (lastFormantBase > 0.5f ? lastFormantBase / (float) sampleRate : 0.0f);
 
     // Tell the host how late the shifted sound arrives, so Reaper can compensate.
     latencySamples = stretch.inputLatency() + stretch.outputLatency();
@@ -121,6 +138,13 @@ void HarmonioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     {
         stretch.setFormantFactor (1.0f, formants);
         lastFormants = formants;
+    }
+
+    const float formantBase = formantBaseParam->load();
+    if (formantBase != lastFormantBase)
+    {
+        stretch.setFormantBase (formantBase > 0.5f ? formantBase / (float) currentSampleRate : 0.0f);
+        lastFormantBase = formantBase;
     }
 
     mixSmooth.setTargetValue (mixParam->load() * 0.01f);

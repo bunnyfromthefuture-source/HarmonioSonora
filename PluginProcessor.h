@@ -42,6 +42,8 @@ private:
     int latencySamples = 0;
     double tailSeconds = 0.0;
     bool lastFormants = false;
+    float lastFormantBase = -1.0f;
+    double currentSampleRate = 44100.0;
 
     juce::AudioBuffer<float> inputCopy;   // the stretcher needs separate input and output buffers
     juce::AudioBuffer<float> dryDelay;    // delays the original so it lines up with the shifted sound
@@ -53,6 +55,7 @@ private:
     std::atomic<float>* muteParam = nullptr;
     std::atomic<float>* mixParam = nullptr;
     std::atomic<float>* formantsParam = nullptr;
+    std::atomic<float>* formantBaseParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonioProcessor)
 };
