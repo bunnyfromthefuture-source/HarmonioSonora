@@ -36,9 +36,13 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
+    // (Re)configures the pitch engine for the chosen analysis window (0..3).
+    void configureEngine (int windowIndex);
+
     signalsmith::stretch::SignalsmithStretch<float> stretch;
 
     int channelsConfigured = 0;
+    int configuredWindow = -1;
     int latencySamples = 0;
     double tailSeconds = 0.0;
     bool lastFormants = false;
@@ -54,9 +58,10 @@ private:
     std::atomic<float>* intervalParam = nullptr;
     std::atomic<float>* muteParam = nullptr;
     std::atomic<float>* mixParam = nullptr;
-    std::atomic<float>* formantModeParam = nullptr;
-    std::atomic<float>* tonalityParam = nullptr;
+    std::atomic<float>* formantsParam = nullptr;
     std::atomic<float>* formantBaseParam = nullptr;
+    std::atomic<float>* tonalityParam = nullptr;
+    std::atomic<float>* windowParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonioProcessor)
 };

@@ -8,6 +8,12 @@ namespace
     constexpr float pitchRatios[7] = { 1.0f / 2.0f, 2.0f / 3.0f, 3.0f / 4.0f,
                                        1.0f,
                                        4.0f / 3.0f, 3.0f / 2.0f, 2.0f / 1.0f };
+
+    // Analysis window lengths in seconds: Short, Standard, Long, Very long.
+    constexpr float windowSeconds[4] = { 0.08f, 0.12f, 0.18f, 0.25f };
+
+    // How often a new analysis is made (kept constant, so longer windows overlap more).
+    constexpr double analysisIntervalSeconds = 0.03;
 }
 
 HarmonioProcessor::HarmonioProcessor()
@@ -16,12 +22,13 @@ HarmonioProcessor::HarmonioProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "STATE", createLayout())
 {
-    intervalParam = apvts.getRawParameterValue ("interval");
-    muteParam     = apvts.getRawParameterValue ("muteOriginal");
-    mixParam      = apvts.getRawParameterValue ("mix");
-    formantModeParam = apvts.getRawParameterValue ("formantMode");
-    tonalityParam    = apvts.getRawParameterValue ("tonality");
+    intervalParam    = apvts.getRawParameterValue ("interval");
+    muteParam        = apvts.getRawParameterValue ("muteOriginal");
+    mixParam         = apvts.getRawParameterValue ("mix");
+    formantsParam    = apvts.getRawParameterValue ("formants");
     formantBaseParam = apvts.getRawParameterValue ("formantBase");
+    tonalityParam    = apvts.getRawParameterValue ("tonality");
+    windowParam      = apvts.getRawParameterValue ("window");
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout HarmonioProcessor::createLayout()
@@ -48,12 +55,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout HarmonioProcessor::createLay
 
     // Keeps the "character" of voices/instruments (their body resonance) in place
     // instead of shifting it along with the pitch.
-    layout.add (std::make_unique<juce::AudioParameterChoice> (
-        juce::ParameterID { "formantMode", 1 }, "Preserve Formants",
-        juce::StringArray { "Off", "Up-shifts only", "Always" }, 1));
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "formants", 1 }, "Preserve Formants", true));
 
     // Rough pitch of the source (e.g. ~200 Hz for a voice, ~100 Hz for a bass).
     // 0 = Auto (the plugin guesses, which can be unreliable).
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "formantBase", 1 }, "Formant Base",
+        juce::NormalisableRange<float> (0.0f, 1000.0f, 1.0f, 0.4f), 0.0f,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction ([] (float v, int)
+            {
+                return v < 1.0f ? juce::String ("Auto")
+                                : juce::String (juce::roundToInt (v)) + " Hz";
+            })));
+
     // Tonality limit: above this frequency the shift is applied as a plain offset
     // instead of a multiplication, which keeps more of the original brightness
     // (mainly useful when pitching down). 0 = Off.
@@ -67,45 +83,48 @@ juce::AudioProcessorValueTreeState::ParameterLayout HarmonioProcessor::createLay
                                 : juce::String (juce::roundToInt (v)) + " Hz";
             })));
 
-    layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { "formantBase", 1 }, "Formant Base",
-        juce::NormalisableRange<float> (0.0f, 1000.0f, 1.0f, 0.4f), 0.0f,
-        juce::AudioParameterFloatAttributes()
-            .withStringFromValueFunction ([] (float v, int)
-            {
-                return v < 1.0f ? juce::String ("Auto")
-                                : juce::String (juce::roundToInt (v)) + " Hz";
-            })));
+    // Analysis window: longer = smoother on sustained sounds, softer on attacks.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "window", 1 }, "Window",
+        juce::StringArray { "Short (80 ms)", "Standard (120 ms)", "Long (180 ms)", "Very long (250 ms)" }, 1));
 
     return layout;
+}
+
+void HarmonioProcessor::configureEngine (int windowIndex)
+{
+    configuredWindow = juce::jlimit (0, 3, windowIndex);
+
+    const int blockSamples    = (int) (currentSampleRate * (double) windowSeconds[configuredWindow]);
+    const int intervalSamples = (int) (currentSampleRate * analysisIntervalSeconds);
+
+    stretch.configure (channelsConfigured, blockSamples, intervalSamples, false);
+    stretch.reset();
+
+    // Re-apply settings that live inside the engine.
+    lastFormants = false;
+    stretch.setFormantFactor (1.0f, false);
+    lastFormantBase = -1.0f; // forces the formant base to be re-sent on the next block
+
+    // Tell the host how late the shifted sound arrives, so Reaper can compensate.
+    latencySamples = stretch.inputLatency() + stretch.outputLatency();
+    setLatencySamples (latencySamples);
+    tailSeconds = (double) latencySamples / currentSampleRate;
+
+    dryDelay.setSize (channelsConfigured, juce::jmax (latencySamples, 1));
+    dryDelay.clear();
+    dryPos = 0;
 }
 
 void HarmonioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     channelsConfigured = juce::jlimit (1, 2, getTotalNumInputChannels());
-
-    // Quality-first setup (the "default" preset, not the cheaper one).
-    stretch.presetDefault (channelsConfigured, (float) sampleRate);
-    stretch.reset();
-
-    lastFormants = false;
-    stretch.setFormantFactor (1.0f, false);
-
     currentSampleRate = sampleRate;
-    lastFormantBase = formantBaseParam->load();
-    stretch.setFormantBase (lastFormantBase > 0.5f ? lastFormantBase / (float) sampleRate : 0.0f);
 
-    // Tell the host how late the shifted sound arrives, so Reaper can compensate.
-    latencySamples = stretch.inputLatency() + stretch.outputLatency();
-    setLatencySamples (latencySamples);
-    tailSeconds = (double) latencySamples / sampleRate;
+    configureEngine (juce::roundToInt (windowParam->load()));
 
     inputCopy.setSize (channelsConfigured, juce::jmax (samplesPerBlock, 1));
     inputCopy.clear();
-
-    dryDelay.setSize (channelsConfigured, juce::jmax (latencySamples, 1));
-    dryDelay.clear();
-    dryPos = 0;
 
     mixSmooth.reset (sampleRate, 0.03);
     dryGainSmooth.reset (sampleRate, 0.03);
@@ -136,6 +155,11 @@ void HarmonioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (channelsConfigured == 0 || buffer.getNumChannels() != channelsConfigured || numSamples == 0)
         return;
 
+    // If the Window setting was changed, rebuild the engine (brief interruption; fine for offline use).
+    const int windowIdx = juce::jlimit (0, 3, juce::roundToInt (windowParam->load()));
+    if (windowIdx != configuredWindow)
+        configureEngine (windowIdx);
+
     if (inputCopy.getNumSamples() < numSamples)
         inputCopy.setSize (channelsConfigured, numSamples, false, false, true);
 
@@ -145,8 +169,7 @@ void HarmonioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // Parameters
     const int idx = juce::jlimit (0, 6, juce::roundToInt (intervalParam->load()));
     const bool isUnison = (idx == 3);
-    const int formantMode = juce::roundToInt (formantModeParam->load()); // 0 Off, 1 Up-shifts only, 2 Always
-    const bool formants = (formantMode == 2) || (formantMode == 1 && idx > 3);
+    const bool formants = formantsParam->load() > 0.5f;
 
     const float tonalityHz = tonalityParam->load();
     stretch.setTransposeFactor (pitchRatios[idx],
