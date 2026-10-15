@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(HarmonioSonora VERSION 0.2.0)
+project(HarmonioSonora VERSION 0.3.0)
 
 include(FetchContent)
 
@@ -38,9 +38,16 @@ juce_add_plugin(HarmonioSonora
     NEEDS_MIDI_OUTPUT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
+# The wood and chrome images are embedded inside the plugin.
+juce_add_binary_data(HarmonioAssets SOURCES
+    wood.jpg
+    chrome.jpg)
+
 target_sources(HarmonioSonora PRIVATE
     PluginProcessor.cpp
-    PluginProcessor.h)
+    PluginProcessor.h
+    PluginEditor.cpp
+    PluginEditor.h)
 
 target_include_directories(HarmonioSonora PRIVATE ${signalsmith_stretch_SOURCE_DIR})
 
@@ -53,6 +60,7 @@ target_compile_definitions(HarmonioSonora PUBLIC
 target_link_libraries(HarmonioSonora
     PRIVATE
         juce::juce_audio_utils
+        HarmonioAssets
         signalsmith-linear
     PUBLIC
         juce::juce_recommended_config_flags

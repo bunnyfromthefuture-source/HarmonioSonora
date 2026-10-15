@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include <cmath>
 
 namespace
@@ -51,7 +52,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout HarmonioProcessor::createLay
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "mix", 1 }, "Mix",
-        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f));
+        juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction ([] (float v, int)
+            {
+                return juce::String (juce::roundToInt (v)) + " %";
+            })));
 
     // Keeps the "character" of voices/instruments (their body resonance) in place
     // instead of shifting it along with the pitch.
@@ -230,7 +236,7 @@ void HarmonioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
 juce::AudioProcessorEditor* HarmonioProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new HarmonioEditor (*this);
 }
 
 void HarmonioProcessor::getStateInformation (juce::MemoryBlock& destData)
