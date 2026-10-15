@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include "signalsmith-stretch.h"
 
 class HarmonioProcessor : public juce::AudioProcessor
 {
@@ -19,7 +20,7 @@ public:
     const juce::String getName() const override { return "Harmonio Sonora"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return tailSeconds; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -35,21 +36,23 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
-    // Length of the crossfading grain window in milliseconds.
-    // Longer = smoother on low notes but more "echo"; shorter = tighter but more warble.
-    static constexpr float windowMs = 40.0f;
+    signalsmith::stretch::SignalsmithStretch<float> stretch;
 
-    juce::AudioBuffer<float> delayBuffer;
-    int writePos = 0;
-    float phase = 0.0f;
-    float windowSamples = 1764.0f;
-    double currentSampleRate = 44100.0;
+    int channelsConfigured = 0;
+    int latencySamples = 0;
+    double tailSeconds = 0.0;
+    bool lastFormants = false;
+
+    juce::AudioBuffer<float> inputCopy;   // the stretcher needs separate input and output buffers
+    juce::AudioBuffer<float> dryDelay;    // delays the original so it lines up with the shifted sound
+    int dryPos = 0;
 
     juce::SmoothedValue<float> mixSmooth, dryGainSmooth, bypassSmooth;
 
     std::atomic<float>* intervalParam = nullptr;
     std::atomic<float>* muteParam = nullptr;
     std::atomic<float>* mixParam = nullptr;
+    std::atomic<float>* formantsParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonioProcessor)
 };
