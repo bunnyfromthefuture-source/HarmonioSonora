@@ -10,10 +10,10 @@ namespace
                                        4.0f / 3.0f, 3.0f / 2.0f, 2.0f / 1.0f };
 
     // Analysis window lengths in seconds: Short, Standard, Long, Very long.
-    constexpr float windowSeconds[4] = { 0.08f, 0.12f, 0.18f, 0.25f };
+    constexpr float windowSeconds[4] = { 0.05f, 0.12f, 0.25f, 0.40f };
 
-    // How often a new analysis is made (kept constant, so longer windows overlap more).
-    constexpr double analysisIntervalSeconds = 0.03;
+    // How often a new analysis is made. Short uses a finer step so its small window still overlaps well.
+    constexpr double analysisIntervalSeconds[4] = { 0.015, 0.03, 0.03, 0.03 };
 }
 
 HarmonioProcessor::HarmonioProcessor()
@@ -86,7 +86,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout HarmonioProcessor::createLay
     // Analysis window: longer = smoother on sustained sounds, softer on attacks.
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "window", 1 }, "Window",
-        juce::StringArray { "Short (80 ms)", "Standard (120 ms)", "Long (180 ms)", "Very long (250 ms)" }, 1));
+        juce::StringArray { "Short (50 ms)", "Standard (120 ms)", "Long (250 ms)", "Very long (400 ms)" }, 1));
 
     return layout;
 }
@@ -96,7 +96,7 @@ void HarmonioProcessor::configureEngine (int windowIndex)
     configuredWindow = juce::jlimit (0, 3, windowIndex);
 
     const int blockSamples    = (int) (currentSampleRate * (double) windowSeconds[configuredWindow]);
-    const int intervalSamples = (int) (currentSampleRate * analysisIntervalSeconds);
+    const int intervalSamples = (int) (currentSampleRate * analysisIntervalSeconds[configuredWindow]);
 
     stretch.configure (channelsConfigured, blockSamples, intervalSamples, false);
     stretch.reset();
